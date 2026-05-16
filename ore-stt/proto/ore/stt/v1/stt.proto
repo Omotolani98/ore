@@ -1,0 +1,70 @@
+syntax = "proto3";
+package ore.stt.v1;
+
+option go_package = "ore/proto/ore/stt/v1;sttv1";
+
+service SpeechToText {
+  // Batch transcription. Audio sent in a single request.
+  rpc Transcribe(TranscribeRequest) returns (TranscribeResponse);
+
+  // Phase 1.5 - streaming variant. Stub the handler for now,
+  // return UNIMPLEMENTED until we actually need it.
+  rpc TranscribeStream(stream AudioChunk) returns (stream TranscribeEvent);
+}
+
+message TranscribeRequest {
+  bytes audio = 1;
+  AudioFormat format = 2;
+  uint32 sample_rate = 3;       // expected: 16000; anything else triggers resample.
+  bool include_timestamps = 4;
+  string request_id = 5;        // optional; server generates if empty.
+  bool trim_silence = 6;        // opt-in VAD pre-pass.
+}
+
+message TranscribeResponse {
+  string text = 1;
+  repeated Word words = 2;
+  float confidence = 3;
+  uint64 latency_ms = 4;
+  string request_id = 5;
+  uint32 audio_duration_ms = 6;
+}
+
+message Word {
+  string text = 1;
+  float start_sec = 2;
+  float end_sec = 3;
+}
+
+enum AudioFormat {
+  AUDIO_FORMAT_UNSPECIFIED = 0;
+  AUDIO_FORMAT_WAV         = 1;
+  AUDIO_FORMAT_PCM_S16LE   = 2;
+}
+
+// Streaming messages (defined now, handler stubbed)
+message AudioChunk {
+  bytes audio = 1;
+  AudioFormat format = 2;
+  uint32 sample_rate = 3;
+  bool is_final = 4;
+  string request_id = 5;
+}
+
+message TranscribeEvent {
+  oneof kind {
+    InterimHypothesis interim = 1;
+    FinalHypothesis  final   = 2;
+  }
+}
+
+message InterimHypothesis {
+  string text = 1;
+  float confidence = 2;
+}
+
+message FinalHypothesis {
+  string text = 1;
+  repeated Word words = 2;
+  float confidence = 3;
+}

@@ -1,0 +1,22 @@
+target-version = "py311"
+line-length = 100
+extend-exclude = ["src/ore_stt/grpc/generated"]  # generated code is not ours
+
+[lint]
+select = [
+    "E",   # pycodestyle
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # bugbear
+    "UP",  # pyupgrade
+    "SIM", # simplify
+    "RUF", # ruff-specific
+]
+ignore = ["E501"]  # line length handled by formatter
+
+[lint.per-file-ignores]
+"src/ore_stt/grpc/generated/**" = ["ALL"]  # generated code is not ours to lint
+"tests/**" = ["B018"]                       # tests can use otherwise-meaningless expressions
+
+[format]
+quote-style = "double"
