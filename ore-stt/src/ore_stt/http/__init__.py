@@ -1,1 +1,1 @@
-"""Admin HTTP surface: /healthz, /readyz, /info. Implemented in S2."""
+"""Admin HTTP surface: /healthz, /readyz, /info."""
