@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-S1 skeleton done: `pyproject.toml`, `uv.lock`, `proto/ore/stt/v1/stt.proto`, `src/ore_stt/` (config, log, server, no-op gRPC servicer + audio/asr/http package stubs), `tests/unit/test_config.py`, tooling configs (`.ruff.toml`, `mypy.ini`, `Makefile`, `Dockerfile`). `uv sync` / `make proto` / `make lint` / `make typecheck` / `make test` / `uv run python -m ore_stt` all pass — the gRPC server starts and every RPC returns `UNIMPLEMENTED`.
+S1 (skeleton) and S2 (admin surface) done. The process runs the no-op gRPC server plus the admin HTTP server (`http/admin.py`): `/healthz`, `/readyz`, `/info` on `STT_ADMIN_PORT`. `/readyz` returns 503 until a readiness flag flips — in v1 a dummy flag in `server.py` (`_Readiness`), replaced by `ParakeetModel.ready` in S4. `make lint` / `make typecheck` / `make test` / `uv run python -m ore_stt` all pass.
 
-Next: S2–S8 from ARCHITECTURE.md §16 (admin HTTP, audio decode, model layer, …). `ARCHITECTURE.md` remains the source of truth for unbuilt milestones.
+Next: S3–S8 from ARCHITECTURE.md §16 (audio decode, model layer, …). `ARCHITECTURE.md` remains the source of truth for unbuilt milestones.
 
 ## What this service is
 
