@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-This repo currently contains only `ARCHITECTURE.md` — a draft spec (v0.1). No source code, `pyproject.toml`, `proto/`, or `uv.lock` exists yet. Treat `ARCHITECTURE.md` as the source of truth; building the service means implementing milestones S1–S8 in §16 of that doc. The layout, commands, and configs below are the planned design — match them when scaffolding.
+S1 skeleton done: `pyproject.toml`, `uv.lock`, `proto/ore/stt/v1/stt.proto`, `src/ore_stt/` (config, log, server, no-op gRPC servicer + audio/asr/http package stubs), `tests/unit/test_config.py`, tooling configs (`.ruff.toml`, `mypy.ini`, `Makefile`, `Dockerfile`). `uv sync` / `make proto` / `make lint` / `make typecheck` / `make test` / `uv run python -m ore_stt` all pass — the gRPC server starts and every RPC returns `UNIMPLEMENTED`.
+
+Next: S2–S8 from ARCHITECTURE.md §16 (admin HTTP, audio decode, model layer, …). `ARCHITECTURE.md` remains the source of truth for unbuilt milestones.
 
 ## What this service is
 
