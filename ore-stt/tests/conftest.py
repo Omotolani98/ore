@@ -71,6 +71,33 @@ def make_stereo_wav_bytes(seconds: float, rate: int = 16000) -> bytes:
     return buf.getvalue()
 
 
+def make_silence_wav_bytes(seconds: float, rate: int = 16000) -> bytes:
+    """Encode a ``seconds``-long block of pure silence as 16-bit WAV bytes."""
+    silence = np.zeros(int(seconds * rate), dtype=np.float32)
+    buf = io.BytesIO()
+    sf.write(buf, silence, rate, format="WAV", subtype="PCM_16")
+    return buf.getvalue()
+
+
+class StubVadTrimmer:
+    """Configurable in-memory VAD that records calls for assertion."""
+
+    def __init__(self, *, ready: bool = True, output: np.ndarray | None = None) -> None:
+        self._ready = ready
+        self._output = output
+        self.calls = 0
+
+    @property
+    def ready(self) -> bool:
+        return self._ready
+
+    def trim(self, samples: np.ndarray) -> np.ndarray:
+        self.calls += 1
+        if self._output is not None:
+            return self._output
+        return samples
+
+
 @pytest.fixture
 def synthetic_wav() -> bytes:
     """A 1-second 16 kHz WAV — long enough to clear the min-duration floor."""

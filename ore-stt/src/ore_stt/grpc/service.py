@@ -18,6 +18,7 @@ from ulid import ULID
 from ore_stt.asr.model import ParakeetModel, QueueTimeoutError
 from ore_stt.audio.decode import DecodeError, decode
 from ore_stt.audio.resample import TARGET_RATE, resample_to_16k
+from ore_stt.audio.vad import VadTrimmer
 from ore_stt.log import get_logger
 
 if TYPE_CHECKING:
@@ -34,9 +35,15 @@ _Servicer: Any = stt_pb2_grpc.SpeechToTextServicer
 class SpeechToTextServicer(_Servicer):  # type: ignore[misc]
     """Implements the SpeechToText gRPC service over a resident Parakeet model."""
 
-    def __init__(self, model: ParakeetModel, settings: Settings) -> None:
+    def __init__(
+        self,
+        model: ParakeetModel,
+        settings: Settings,
+        vad: VadTrimmer | None = None,
+    ) -> None:
         self._model = model
         self._settings = settings
+        self._vad = vad
         self._log = get_logger(__name__)
 
     async def Transcribe(
@@ -65,24 +72,40 @@ class SpeechToTextServicer(_Servicer):  # type: ignore[misc]
             raise AssertionError("unreachable") from exc
 
         samples = resample_to_16k(buffer.samples, buffer.sample_rate)
-        duration_s = len(samples) / TARGET_RATE
+        original_duration_s = len(samples) / TARGET_RATE
         self._log.info(
             "audio.decoded",
             request_id=request_id,
-            duration_ms=round(duration_s * 1000),
+            duration_ms=round(original_duration_s * 1000),
             sample_rate=buffer.sample_rate,
         )
 
-        if duration_s > self._settings.max_audio_seconds:
+        if original_duration_s > self._settings.max_audio_seconds:
             await context.abort(
                 grpc.StatusCode.RESOURCE_EXHAUSTED,
                 f"audio exceeds max {self._settings.max_audio_seconds}s",
             )
             raise AssertionError("unreachable")
 
-        if duration_s < self._settings.min_audio_seconds:
+        # VAD trim (§5): opt-in via request flag or server-side default. If the
+        # VAD failed to load we fall through to raw audio with a warning.
+        wants_trim = request.trim_silence or self._settings.vad_default
+        if wants_trim and self._vad is not None and self._vad.ready:
+            samples = self._vad.trim(samples)
+            trimmed_duration_s = len(samples) / TARGET_RATE
+            self._log.info(
+                "audio.trimmed",
+                request_id=request_id,
+                duration_ms=round(trimmed_duration_s * 1000),
+            )
+        else:
+            if wants_trim and (self._vad is None or not self._vad.ready):
+                self._log.warning("vad.unavailable", request_id=request_id)
+            trimmed_duration_s = original_duration_s
+
+        if trimmed_duration_s < self._settings.min_audio_seconds:
             # Too short to be speech (§5.1): empty transcript, not an error.
-            return _build_response("", (), 0.0, request_id, started, duration_s)
+            return _build_response("", (), 0.0, request_id, started, original_duration_s)
 
         try:
             result = await self._model.transcribe(
@@ -99,7 +122,7 @@ class SpeechToTextServicer(_Servicer):  # type: ignore[misc]
 
         self._log.info("inference.done", request_id=request_id, chars=len(result.text))
         response = _build_response(
-            result.text, result.words, result.confidence, request_id, started, duration_s
+            result.text, result.words, result.confidence, request_id, started, original_duration_s
         )
         self._log.info(
             "request.completed",
