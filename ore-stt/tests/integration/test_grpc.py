@@ -12,11 +12,18 @@ from contextlib import asynccontextmanager
 
 import grpc
 import pytest
-from conftest import StubParakeetModel, make_stereo_wav_bytes, make_wav_bytes
+from conftest import (
+    StubParakeetModel,
+    StubVadTrimmer,
+    make_silence_wav_bytes,
+    make_stereo_wav_bytes,
+    make_wav_bytes,
+)
 from ore.stt.v1 import stt_pb2, stt_pb2_grpc
 
 from ore_stt.asr.model import QueueTimeoutError
 from ore_stt.asr.result import TranscriptionResult
+from ore_stt.audio.vad import VadTrimmer
 from ore_stt.config import Settings
 from ore_stt.grpc.service import SpeechToTextServicer
 
@@ -25,11 +32,12 @@ from ore_stt.grpc.service import SpeechToTextServicer
 async def _stub_for(
     model: StubParakeetModel,
     settings: Settings | None = None,
+    vad: VadTrimmer | None = None,
 ) -> AsyncIterator[stt_pb2_grpc.SpeechToTextStub]:
     """Run a server backed by ``model`` and yield a connected client stub."""
     server = grpc.aio.server()
     stt_pb2_grpc.add_SpeechToTextServicer_to_server(
-        SpeechToTextServicer(model, settings or Settings()),
+        SpeechToTextServicer(model, settings or Settings(), vad=vad),
         server,  # type: ignore[arg-type]
     )
     port = server.add_insecure_port("127.0.0.1:0")
@@ -199,3 +207,51 @@ async def test_validation_order_format_before_empty() -> None:
             await stub.Transcribe(_request(b"", format=stt_pb2.AUDIO_FORMAT_UNSPECIFIED))
     assert exc.value.code() == grpc.StatusCode.INVALID_ARGUMENT
     assert "format" in exc.value.details()
+
+
+async def test_trim_silence_flag_uses_vad() -> None:
+    # trim_silence=True asks the VAD to crop; an empty-trim stub causes the
+    # short-circuit path to return an empty transcript (§5).
+    import numpy as np
+
+    vad = StubVadTrimmer(output=np.empty(0, dtype=np.float32))
+    async with _stub_for(StubParakeetModel(), vad=vad) as stub:
+        resp = await stub.Transcribe(_request(make_silence_wav_bytes(1.0), trim_silence=True))
+    assert vad.calls == 1
+    assert resp.text == ""
+    assert resp.confidence == 0.0
+    # audio_duration_ms reflects the original audio, not the trimmed length.
+    assert resp.audio_duration_ms == pytest.approx(1000, abs=2)
+
+
+async def test_trim_silence_default_off_skips_vad() -> None:
+    # No flag, no server default → VAD is not invoked.
+    vad = StubVadTrimmer()
+    async with _stub_for(StubParakeetModel(), vad=vad) as stub:
+        await stub.Transcribe(_request(make_wav_bytes(1.0)))
+    assert vad.calls == 0
+
+
+async def test_vad_default_setting_triggers_vad() -> None:
+    # Server-wide default flips trim on even when the request flag is false.
+    vad = StubVadTrimmer()
+    async with _stub_for(StubParakeetModel(), settings=Settings(vad_default=True), vad=vad) as stub:
+        await stub.Transcribe(_request(make_wav_bytes(1.0), trim_silence=False))
+    assert vad.calls == 1
+
+
+async def test_trim_silence_keeps_speech_path() -> None:
+    # Passthrough trim leaves audio intact; model still produces a transcript.
+    vad = StubVadTrimmer()
+    async with _stub_for(StubParakeetModel(), vad=vad) as stub:
+        resp = await stub.Transcribe(_request(make_wav_bytes(1.0), trim_silence=True))
+    assert vad.calls == 1
+    assert resp.text == "hello world"
+
+
+async def test_trim_silence_no_vad_configured_falls_back() -> None:
+    # Servicer with vad=None should not error when trim_silence=True; raw audio
+    # is transcribed and a warning is logged (asserted indirectly by success).
+    async with _stub_for(StubParakeetModel(), vad=None) as stub:
+        resp = await stub.Transcribe(_request(make_wav_bytes(1.0), trim_silence=True))
+    assert resp.text == "hello world"
