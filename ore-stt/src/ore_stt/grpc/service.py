@@ -73,6 +73,13 @@ class SpeechToTextServicer(_Servicer):  # type: ignore[misc]
             sample_rate=buffer.sample_rate,
         )
 
+        if duration_s > self._settings.max_audio_seconds:
+            await context.abort(
+                grpc.StatusCode.RESOURCE_EXHAUSTED,
+                f"audio exceeds max {self._settings.max_audio_seconds}s",
+            )
+            raise AssertionError("unreachable")
+
         if duration_s < self._settings.min_audio_seconds:
             # Too short to be speech (§5.1): empty transcript, not an error.
             return _build_response("", (), 0.0, request_id, started, duration_s)

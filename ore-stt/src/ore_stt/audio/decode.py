@@ -48,15 +48,16 @@ def decode(audio: bytes, fmt: int, sample_rate: int) -> AudioBuffer:
     ``sample_rate`` is required for PCM (the raw stream carries no header) and is
     ignored for WAV (the file header is authoritative).
     """
+    if fmt not in (_FORMAT_WAV, _FORMAT_PCM_S16LE):
+        raise DecodeError(f"unsupported audio format: {fmt}")
+
     if not audio:
         raise DecodeError("audio is empty")
 
     if fmt == _FORMAT_WAV:
         samples, rate = _decode_wav(audio)
-    elif fmt == _FORMAT_PCM_S16LE:
-        samples, rate = _decode_pcm(audio, sample_rate), sample_rate
     else:
-        raise DecodeError(f"unsupported audio format: {fmt}")
+        samples, rate = _decode_pcm(audio, sample_rate), sample_rate
 
     if rate not in _SUPPORTED_RATES:
         raise DecodeError(f"unsupported sample rate: {rate}")
