@@ -2,7 +2,8 @@
 
 Both run in one process on one event loop (ARCHITECTURE.md §2): one resident
 Parakeet model dominates memory and NeMo's ``transcribe()`` is not concurrency
--safe, so there is no multi-worker split. The model itself is wired in S4.
+-safe, so there is no multi-worker split. The model loads eagerly in a
+background task at startup; ``/readyz`` and gRPC stay unready until it lands.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import signal
 import grpc
 import uvicorn
 
+from ore_stt.asr.model import ParakeetModel
 from ore_stt.config import Settings
 from ore_stt.grpc.service import SpeechToTextServicer
 from ore_stt.http.admin import create_admin_app
@@ -21,31 +23,16 @@ from ore_stt.log import configure_logging, get_logger
 # Default 4 MB is too small for a 2-minute WAV (ARCHITECTURE.md §14).
 _MAX_MESSAGE_BYTES = 16 * 1024 * 1024
 
-# Dummy model-load delay for S2. Replaced by real ParakeetModel.load() in S4.
-_FAKE_LOAD_SECONDS = 2.0
 
-
-class _Readiness:
-    """Mutable model-readiness flag. Stand-in for ``ParakeetModel.ready`` (S4)."""
-
-    def __init__(self) -> None:
-        self._ready = False
-
-    @property
-    def ready(self) -> bool:
-        return self._ready
-
-    def mark_ready(self) -> None:
-        self._ready = True
-
-
-async def _simulate_model_load(readiness: _Readiness) -> None:
-    """Flip the readiness flag after a delay, mimicking model load (S4 replaces this)."""
+async def _load_and_warmup(model: ParakeetModel) -> None:
+    """Load model weights then run a warmup inference (ARCHITECTURE.md §6.1)."""
     log = get_logger(__name__)
-    log.info("model.load.start")
-    await asyncio.sleep(_FAKE_LOAD_SECONDS)
-    readiness.mark_ready()
-    log.info("model.load.complete")
+    try:
+        await model.load()
+        await model.warmup()
+    except Exception:
+        # Log and leave the model unready; /readyz and gRPC stay UNAVAILABLE.
+        log.exception("model.load.failed")
 
 
 async def serve(settings: Settings) -> None:
@@ -55,21 +42,24 @@ async def serve(settings: Settings) -> None:
     # Imported here so a missing `make proto` fails loudly at startup, not import time.
     from ore.stt.v1 import stt_pb2_grpc
 
+    model = ParakeetModel(settings.model_name, settings.device, settings.queue_wait_timeout_ms)
+
     grpc_server = grpc.aio.server(
         options=[
             ("grpc.max_send_message_length", _MAX_MESSAGE_BYTES),
             ("grpc.max_receive_message_length", _MAX_MESSAGE_BYTES),
         ]
     )
-    stt_pb2_grpc.add_SpeechToTextServicer_to_server(SpeechToTextServicer(), grpc_server)
+    stt_pb2_grpc.add_SpeechToTextServicer_to_server(
+        SpeechToTextServicer(model, settings), grpc_server
+    )
 
     grpc_bind = f"{settings.grpc_host}:{settings.grpc_port}"
     grpc_server.add_insecure_port(grpc_bind)
     await grpc_server.start()
     log.info("server.started", bind=grpc_bind)
 
-    readiness = _Readiness()
-    admin_app = create_admin_app(settings, lambda: readiness.ready)
+    admin_app = create_admin_app(settings, lambda: model.ready)
     admin = uvicorn.Server(
         uvicorn.Config(
             admin_app,
@@ -82,7 +72,7 @@ async def serve(settings: Settings) -> None:
     admin_task = asyncio.create_task(admin.serve())
     log.info("admin.started", bind=f"{settings.admin_host}:{settings.admin_port}")
 
-    load_task = asyncio.create_task(_simulate_model_load(readiness))
+    load_task = asyncio.create_task(_load_and_warmup(model))
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()

@@ -469,36 +469,36 @@ uv run python -m ore_stt                 # starts gRPC + FastAPI
 .PHONY: dev lint format typecheck test proto run docker
 
 dev:        ## install dev deps
-	uv sync --all-extras
+ uv sync --all-extras
 
 lint:       ## ruff check
-	uv run ruff check src tests
+ uv run ruff check src tests
 
 format:     ## ruff format
-	uv run ruff format src tests
+ uv run ruff format src tests
 
 typecheck:  ## mypy strict
-	uv run mypy src
+ uv run mypy src
 
 test:       ## fast tests only (no e2e)
-	uv run pytest -m "not e2e" tests/
+ uv run pytest -m "not e2e" tests/
 
 test-e2e:   ## full tests including real model
-	uv run pytest tests/
+ uv run pytest tests/
 
 proto:      ## regenerate gRPC stubs
-	uv run python -m grpc_tools.protoc \
-		-I proto \
-		--python_out=src/ore_stt/grpc/generated \
-		--pyi_out=src/ore_stt/grpc/generated \
-		--grpc_python_out=src/ore_stt/grpc/generated \
-		proto/ore/stt/v1/stt.proto
+ uv run python -m grpc_tools.protoc \
+  -I proto \
+  --python_out=src/ore_stt/grpc/generated \
+  --pyi_out=src/ore_stt/grpc/generated \
+  --grpc_python_out=src/ore_stt/grpc/generated \
+  proto/ore/stt/v1/stt.proto
 
 run:        ## run server
-	uv run python -m ore_stt
+ uv run python -m ore_stt
 
 docker:     ## build container image
-	docker build -t ore-stt:dev .
+ docker build -t ore-stt:dev .
 ```
 
 ### Container
@@ -679,4 +679,4 @@ If multi-host deployment becomes a thing, mTLS goes between agent and STT. That 
 | S7  | Container           | Image builds, healthcheck passes, model loads from mounted HF cache.                                   |
 | S8  | E2E sanity          | WER-against-expected test for `hello.wav` and `long.wav` passes on a GPU runner.                       |
 
-After S8, ore-stt is ready for the Go agent (`ore`) to consume.
+after S8, ore-stt is ready for the Go agent (`ore`) to consume.
