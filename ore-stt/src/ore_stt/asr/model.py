@@ -91,9 +91,7 @@ class ParakeetModel:
             return
 
         self._device = self._device or pick_device()
-        self._log.info(
-            "model.load.start", model=self._model_name, device=self._device
-        )
+        self._log.info("model.load.start", model=self._model_name, device=self._device)
         loop = asyncio.get_running_loop()
         self._model = await loop.run_in_executor(None, self._load_blocking)
         self._ready = True
@@ -112,15 +110,11 @@ class ParakeetModel:
         """Run one inference on silence so the first real request pays no JIT cost."""
         if not self._ready:
             raise RuntimeError("warmup called before load")
-        silence: FloatArray = np.zeros(
-            int(_WARMUP_SECONDS * _TARGET_RATE), dtype=np.float32
-        )
+        silence: FloatArray = np.zeros(int(_WARMUP_SECONDS * _TARGET_RATE), dtype=np.float32)
         await self.transcribe(silence, include_timestamps=False)
         self._log.info("model.warmup.complete")
 
-    async def transcribe(
-        self, audio: FloatArray, include_timestamps: bool
-    ) -> TranscriptionResult:
+    async def transcribe(self, audio: FloatArray, include_timestamps: bool) -> TranscriptionResult:
         """Transcribe mono float32 16 kHz ``audio``.
 
         Serialized by the model lock. A wait longer than the configured queue
@@ -130,9 +124,7 @@ class ParakeetModel:
             raise RuntimeError("transcribe called before load")
 
         try:
-            await asyncio.wait_for(
-                self._lock.acquire(), timeout=self._queue_wait_timeout_s
-            )
+            await asyncio.wait_for(self._lock.acquire(), timeout=self._queue_wait_timeout_s)
         except TimeoutError as exc:
             raise QueueTimeoutError(
                 f"waited over {self._queue_wait_timeout_s:.1f}s at the model lock"

@@ -43,9 +43,7 @@ class StubParakeetModel:
     async def warmup(self) -> None:
         return None
 
-    async def transcribe(
-        self, audio: np.ndarray, include_timestamps: bool
-    ) -> TranscriptionResult:
+    async def transcribe(self, audio: np.ndarray, include_timestamps: bool) -> TranscriptionResult:
         if include_timestamps:
             return self.result
         return TranscriptionResult(text=self.result.text, confidence=self.result.confidence)

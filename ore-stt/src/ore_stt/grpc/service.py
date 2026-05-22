@@ -90,9 +90,7 @@ class SpeechToTextServicer(_Servicer):  # type: ignore[misc]
             await context.abort(grpc.StatusCode.INTERNAL, "transcription failed")
             raise AssertionError("unreachable") from exc
 
-        self._log.info(
-            "inference.done", request_id=request_id, chars=len(result.text)
-        )
+        self._log.info("inference.done", request_id=request_id, chars=len(result.text))
         response = _build_response(
             result.text, result.words, result.confidence, request_id, started, duration_s
         )
@@ -125,10 +123,7 @@ def _build_response(
     """Assemble a ``TranscribeResponse`` from a transcription result."""
     return stt_pb2.TranscribeResponse(
         text=text,
-        words=[
-            stt_pb2.Word(text=w.text, start_sec=w.start_sec, end_sec=w.end_sec)
-            for w in words
-        ],
+        words=[stt_pb2.Word(text=w.text, start_sec=w.start_sec, end_sec=w.end_sec) for w in words],
         confidence=confidence,
         latency_ms=round((time.monotonic() - started) * 1000),
         request_id=request_id,

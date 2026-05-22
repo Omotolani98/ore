@@ -24,7 +24,8 @@ async def _stub_for(model: StubParakeetModel) -> AsyncIterator[stt_pb2_grpc.Spee
     """Run a server backed by ``model`` and yield a connected client stub."""
     server = grpc.aio.server()
     stt_pb2_grpc.add_SpeechToTextServicer_to_server(
-        SpeechToTextServicer(model, Settings()), server  # type: ignore[arg-type]
+        SpeechToTextServicer(model, Settings()),
+        server,  # type: ignore[arg-type]
     )
     port = server.add_insecure_port("127.0.0.1:0")
     await server.start()

@@ -42,9 +42,7 @@ async def serve(settings: Settings) -> None:
     # Imported here so a missing `make proto` fails loudly at startup, not import time.
     from ore.stt.v1 import stt_pb2_grpc
 
-    model = ParakeetModel(
-        settings.model_name, settings.device, settings.queue_wait_timeout_ms
-    )
+    model = ParakeetModel(settings.model_name, settings.device, settings.queue_wait_timeout_ms)
 
     grpc_server = grpc.aio.server(
         options=[
