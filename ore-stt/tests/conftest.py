@@ -62,6 +62,15 @@ def make_wav_bytes(seconds: float, rate: int = 16000) -> bytes:
     return buf.getvalue()
 
 
+def make_stereo_wav_bytes(seconds: float, rate: int = 16000) -> bytes:
+    """Encode a ``seconds``-long 2-channel 16-bit WAV tone as in-memory bytes."""
+    mono = _tone(seconds, rate)
+    stereo = np.stack([mono, mono], axis=1)
+    buf = io.BytesIO()
+    sf.write(buf, stereo, rate, format="WAV", subtype="PCM_16")
+    return buf.getvalue()
+
+
 @pytest.fixture
 def synthetic_wav() -> bytes:
     """A 1-second 16 kHz WAV — long enough to clear the min-duration floor."""
