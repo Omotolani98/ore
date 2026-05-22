@@ -15,6 +15,7 @@ import grpc
 import uvicorn
 
 from ore_stt.asr.model import ParakeetModel
+from ore_stt.audio.vad import SileroVadTrimmer
 from ore_stt.config import Settings
 from ore_stt.grpc.service import SpeechToTextServicer
 from ore_stt.http.admin import create_admin_app
@@ -24,8 +25,12 @@ from ore_stt.log import configure_logging, get_logger
 _MAX_MESSAGE_BYTES = 16 * 1024 * 1024
 
 
-async def _load_and_warmup(model: ParakeetModel) -> None:
-    """Load model weights then run a warmup inference (ARCHITECTURE.md §6.1)."""
+async def _load_and_warmup(model: ParakeetModel, vad: SileroVadTrimmer) -> None:
+    """Load model weights then run a warmup inference (ARCHITECTURE.md §6.1).
+
+    The VAD model loads alongside Parakeet so the first opt-in request pays no
+    setup cost (ARCHITECTURE.md §5).
+    """
     log = get_logger(__name__)
     try:
         await model.load()
@@ -33,6 +38,11 @@ async def _load_and_warmup(model: ParakeetModel) -> None:
     except Exception:
         # Log and leave the model unready; /readyz and gRPC stay UNAVAILABLE.
         log.exception("model.load.failed")
+    try:
+        await vad.load()
+    except Exception:
+        # VAD failure is non-fatal: trim_silence requests fall back to raw audio.
+        log.exception("vad.load.failed")
 
 
 async def serve(settings: Settings) -> None:
@@ -43,6 +53,7 @@ async def serve(settings: Settings) -> None:
     from ore.stt.v1 import stt_pb2_grpc
 
     model = ParakeetModel(settings.model_name, settings.device, settings.queue_wait_timeout_ms)
+    vad = SileroVadTrimmer()
 
     grpc_server = grpc.aio.server(
         options=[
@@ -51,7 +62,7 @@ async def serve(settings: Settings) -> None:
         ]
     )
     stt_pb2_grpc.add_SpeechToTextServicer_to_server(
-        SpeechToTextServicer(model, settings), grpc_server
+        SpeechToTextServicer(model, settings, vad=vad), grpc_server
     )
 
     grpc_bind = f"{settings.grpc_host}:{settings.grpc_port}"
@@ -72,7 +83,7 @@ async def serve(settings: Settings) -> None:
     admin_task = asyncio.create_task(admin.serve())
     log.info("admin.started", bind=f"{settings.admin_host}:{settings.admin_port}")
 
-    load_task = asyncio.create_task(_load_and_warmup(model))
+    load_task = asyncio.create_task(_load_and_warmup(model, vad))
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
